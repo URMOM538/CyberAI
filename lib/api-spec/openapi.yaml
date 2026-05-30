@@ -1,15 +1,18 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: CyberAI API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: threats
+    description: Cybersecurity threat research
+  - name: recommendations
+    description: Antivirus and security program recommendations
 paths:
   /healthz:
     get:
@@ -24,6 +27,129 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /threats:
+    get:
+      operationId: listThreats
+      tags: [threats]
+      summary: List recent cybersecurity threats
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of threats
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Threat"
+
+  /threats/summary:
+    get:
+      operationId: getThreatsSummary
+      tags: [threats]
+      summary: Get threat statistics summary
+      responses:
+        "200":
+          description: Threat summary stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreatsSummary"
+
+  /threats/{id}:
+    get:
+      operationId: getThreat
+      tags: [threats]
+      summary: Get a single threat by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Threat detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Threat"
+        "404":
+          description: Not found
+
+  /recommendations:
+    get:
+      operationId: listRecommendations
+      tags: [recommendations]
+      summary: List security program recommendations
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: platform
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of recommendations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Recommendation"
+
+  /recommendations/featured:
+    get:
+      operationId: getFeaturedRecommendations
+      tags: [recommendations]
+      summary: Get top featured security programs
+      responses:
+        "200":
+          description: Featured recommendations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Recommendation"
+
+  /recommendations/{id}:
+    get:
+      operationId: getRecommendation
+      tags: [recommendations]
+      summary: Get a single recommendation by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Recommendation detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Recommendation"
+        "404":
+          description: Not found
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +160,89 @@ components:
       required:
         - status
 
+    Threat:
+      type: object
+      required: [id, title, description, severity, category, publishedAt, source]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low]
+        category:
+          type: string
+        affectedSystems:
+          type: array
+          items:
+            type: string
+        cveId:
+          type: ["string", "null"]
+        publishedAt:
+          type: string
+        source:
+          type: string
+        sourceUrl:
+          type: ["string", "null"]
+        mitigations:
+          type: array
+          items:
+            type: string
+
+    ThreatsSummary:
+      type: object
+      required: [total, bySeverity, byCategory, recentCount]
+      properties:
+        total:
+          type: integer
+        recentCount:
+          type: integer
+        bySeverity:
+          type: object
+          additionalProperties:
+            type: integer
+        byCategory:
+          type: object
+          additionalProperties:
+            type: integer
+
+    Recommendation:
+      type: object
+      required: [id, name, description, category, platforms, rating, price, isFeatured]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+          enum: [antivirus, firewall, vpn, password-manager, endpoint-protection, threat-intelligence, siem, vulnerability-scanner]
+        platforms:
+          type: array
+          items:
+            type: string
+        rating:
+          type: number
+        price:
+          type: string
+        isFree:
+          type: boolean
+        isFeatured:
+          type: boolean
+        websiteUrl:
+          type: ["string", "null"]
+        pros:
+          type: array
+          items:
+            type: string
+        cons:
+          type: array
+          items:
+            type: string
+        bestFor:
+          type: string
