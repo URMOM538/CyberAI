@@ -78,7 +78,6 @@ function MarkdownText({ text }: { text: string }) {
       );
       continue;
     } else if (line.startsWith("```")) {
-      const lang = line.slice(3);
       i++;
       const codeLines: string[] = [];
       while (i < lines.length && !lines[i].startsWith("```")) {
@@ -92,9 +91,7 @@ function MarkdownText({ text }: { text: string }) {
         </pre>
       );
     } else if (line.trim() === "") {
-      if (elements.length > 0) {
-        elements.push(<div key={`gap-${i}`} className="h-1" />);
-      }
+      elements.push(<div key={`gap-${i}`} className="h-1" />);
     } else {
       elements.push(<p key={i} className="text-sm leading-relaxed">{formatInline(line)}</p>);
     }
@@ -127,7 +124,6 @@ export function Chat() {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: conversations, isLoading: isLoadingConvs } = useListOpenaiConversations({
     query: { queryKey: getListOpenaiConversationsQueryKey() },
@@ -138,27 +134,8 @@ export function Chat() {
     { query: { enabled: activeConvId !== null, queryKey: getGetOpenaiConversationQueryKey(activeConvId ?? 0) } }
   );
 
-  const createConv = useCreateOpenaiConversation({
-    mutation: {
-      onSuccess: (conv) => {
-        queryClient.invalidateQueries({ queryKey: getListOpenaiConversationsQueryKey() });
-        setActiveConvId(conv.id);
-        setMessages([]);
-      },
-    },
-  });
-
-  const deleteConv = useDeleteOpenaiConversation({
-    mutation: {
-      onSuccess: () => {
-        queryClient.invalidateQueries({ queryKey: getListOpenaiConversationsQueryKey() });
-        if (activeConvId !== null) {
-          setActiveConvId(null);
-          setMessages([]);
-        }
-      },
-    },
-  });
+  const createConv = useCreateOpenaiConversation();
+  const deleteConv = useDeleteOpenaiConversation();
 
   useEffect(() => {
     if (activeConv?.messages) {
@@ -170,27 +147,37 @@ export function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleNewConversation = useCallback(() => {
-    createConv.mutate({ body: { title: `Security Chat ${new Date().toLocaleDateString()}` } });
-  }, [createConv]);
+  const createNewConv = useCallback(async (title: string): Promise<number> => {
+    return new Promise((resolve, reject) => {
+      createConv.mutate(
+        { data: { title } },
+        {
+          onSuccess: (conv) => {
+            queryClient.invalidateQueries({ queryKey: getListOpenaiConversationsQueryKey() });
+            resolve(conv.id);
+          },
+          onError: reject,
+        }
+      );
+    });
+  }, [createConv, queryClient]);
+
+  const handleNewConversation = useCallback(async () => {
+    const id = await createNewConv(`Security Chat ${new Date().toLocaleDateString()}`);
+    setActiveConvId(id);
+    setMessages([]);
+  }, [createNewConv]);
 
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || isSending) return;
 
     let convId = activeConvId;
     if (!convId) {
-      const conv = await new Promise<{ id: number }>((resolve) => {
-        createConv.mutate(
-          { body: { title: content.slice(0, 40) + (content.length > 40 ? "…" : "") } },
-          { onSuccess: (c) => { queryClient.invalidateQueries({ queryKey: getListOpenaiConversationsQueryKey() }); resolve(c); } }
-        );
-      });
-      convId = conv.id;
+      convId = await createNewConv(content.slice(0, 50) + (content.length > 50 ? "…" : ""));
       setActiveConvId(convId);
     }
 
-    const userMsg: Message = { role: "user", content };
-    setMessages(prev => [...prev, userMsg, { role: "assistant", content: "", isStreaming: true }]);
+    setMessages(prev => [...prev, { role: "user", content }, { role: "assistant", content: "", isStreaming: true }]);
     setInput("");
     setIsSending(true);
 
@@ -201,6 +188,10 @@ export function Chat() {
         body: JSON.stringify({ content }),
       });
 
+      if (!response.ok) {
+        const err = await response.text();
+        throw new Error(err);
+      }
       if (!response.body) throw new Error("No response body");
 
       const reader = response.body.getReader();
@@ -222,26 +213,28 @@ export function Chat() {
                 setMessages(prev => prev.map((m, i) =>
                   i === prev.length - 1 ? { ...m, isStreaming: false } : m
                 ));
-                queryClient.invalidateQueries({ queryKey: getGetOpenaiConversationQueryKey(convId) });
+                queryClient.invalidateQueries({ queryKey: getGetOpenaiConversationQueryKey(convId!) });
               } else if (data.content) {
                 accumulated += data.content;
                 const snap = accumulated;
                 setMessages(prev => prev.map((m, i) =>
-                  i === prev.length - 1 ? { ...m, content: snap, isStreaming: true } : m
+                  i === prev.length - 1 ? { ...m, content: snap } : m
                 ));
               }
-            } catch {}
+            } catch { /* partial chunk */ }
           }
         }
       }
     } catch (err) {
       setMessages(prev => prev.map((m, i) =>
-        i === prev.length - 1 ? { ...m, content: "An error occurred. Please try again.", isStreaming: false } : m
+        i === prev.length - 1
+          ? { ...m, content: "Something went wrong — please try again.", isStreaming: false }
+          : m
       ));
     } finally {
       setIsSending(false);
     }
-  }, [activeConvId, isSending, createConv, queryClient]);
+  }, [activeConvId, isSending, createNewConv, queryClient]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -294,7 +287,14 @@ export function Chat() {
                   <span className="truncate">{conv.title}</span>
                 </button>
                 <button
-                  onClick={() => deleteConv.mutate({ id: conv.id })}
+                  onClick={() => {
+                    deleteConv.mutate({ id: conv.id }, {
+                      onSuccess: () => {
+                        queryClient.invalidateQueries({ queryKey: getListOpenaiConversationsQueryKey() });
+                        if (activeConvId === conv.id) { setActiveConvId(null); setMessages([]); }
+                      }
+                    });
+                  }}
                   className="opacity-0 group-hover:opacity-100 p-1 rounded text-muted-foreground hover:text-destructive transition-all"
                 >
                   <Trash2 className="w-3 h-3" />
@@ -312,7 +312,6 @@ export function Chat() {
       {/* Main chat area */}
       <div className="flex-1 flex flex-col min-w-0">
         {messages.length === 0 ? (
-          /* Empty state */
           <div className="flex-1 flex flex-col items-center justify-center p-8 gap-8">
             <div className="text-center space-y-3">
               <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center mx-auto"
@@ -332,8 +331,8 @@ export function Chat() {
                 <button
                   key={q}
                   onClick={() => sendMessage(q)}
-                  className="text-left px-4 py-3 rounded-lg border border-border bg-card/50 hover:border-primary/40 hover:bg-primary/5 transition-all duration-150 text-sm text-muted-foreground hover:text-foreground group"
-                  style={{ boxShadow: "0 0 0 0 hsl(205 100% 55% / 0)" }}
+                  disabled={isSending}
+                  className="text-left px-4 py-3 rounded-lg border border-border bg-card/50 hover:border-primary/40 hover:bg-primary/5 transition-all duration-150 text-sm text-muted-foreground hover:text-foreground group disabled:opacity-50"
                 >
                   <span className="flex items-start gap-2">
                     <ChevronRight className="w-3.5 h-3.5 mt-0.5 shrink-0 text-primary/50 group-hover:text-primary transition-colors" />
@@ -344,7 +343,6 @@ export function Chat() {
             </div>
           </div>
         ) : (
-          /* Messages */
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             {messages.map((msg, i) => (
               <div key={i} className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
@@ -385,12 +383,11 @@ export function Chat() {
           </div>
         )}
 
-        {/* Input area */}
+        {/* Input */}
         <div className="border-t border-border p-4 bg-background/50 backdrop-blur">
           <form onSubmit={handleSubmit} className="flex gap-3 items-end max-w-4xl mx-auto">
             <div className="flex-1 relative">
               <textarea
-                ref={textareaRef}
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
@@ -420,7 +417,7 @@ export function Chat() {
             </Button>
           </form>
           <p className="text-center text-xs text-muted-foreground mt-2 font-mono">
-            Press Enter to send · Shift+Enter for new line
+            Enter to send · Shift+Enter for new line
           </p>
         </div>
       </div>
