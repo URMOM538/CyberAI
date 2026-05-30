@@ -10,6 +10,7 @@ import { ThreatDetail } from "@/pages/threat-detail";
 import { Recommendations } from "@/pages/recommendations";
 import { RecommendationDetail } from "@/pages/recommendation-detail";
 import { Chat } from "@/pages/chat";
+import { ThreatMap } from "@/pages/threat-map";
 import NotFound from "@/pages/not-found";
 import { useEffect } from "react";
 
@@ -24,6 +25,7 @@ function Router() {
       <Route path="/recommendations" component={Recommendations} />
       <Route path="/recommendations/:id" component={RecommendationDetail} />
       <Route path="/chat" component={Chat} />
+      <Route path="/threat-map" component={ThreatMap} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -1,14 +1,15 @@
 import { Link, useLocation } from "wouter";
-import { Shield, MessageSquare } from "lucide-react";
+import { Shield, MessageSquare, Globe } from "lucide-react";
 
 export function Navbar() {
   const [location] = useLocation();
 
   const links = [
-    { href: "/", label: "Command Center" },
-    { href: "/threats", label: "Threat Research" },
-    { href: "/recommendations", label: "Security Tools" },
-    { href: "/chat", label: "AI Advisor" },
+    { href: "/", label: "Command Center", icon: null },
+    { href: "/threats", label: "Threat Research", icon: null },
+    { href: "/threat-map", label: "Threat Map", icon: Globe },
+    { href: "/recommendations", label: "Security Tools", icon: null },
+    { href: "/chat", label: "AI Advisor", icon: MessageSquare },
   ];
 
   return (
@@ -40,7 +41,7 @@ export function Navbar() {
                 }`}
                 style={isActive ? { textShadow: "0 0 8px hsl(205 100% 55% / 0.6)", boxShadow: "0 0 0 1px hsl(205 100% 55% / 0.2)" } : {}}
               >
-                {link.href === "/chat" && <MessageSquare className="inline w-3.5 h-3.5 mr-1.5 -mt-0.5" />}
+                {link.icon && <link.icon className="inline w-3.5 h-3.5" />}
                 {link.label}
                 {isActive && (
                   <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1/2 h-px bg-primary"
