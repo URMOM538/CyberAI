@@ -364,6 +364,62 @@ def send_message(conv_id: int, body: SendMessageRequest):
     )
 
 
+# ─── CISA KEV proxy ───────────────────────────────────────────────────────────
+
+import threading as _threading
+import time as _time
+
+_cisa_cache: dict = {}
+_cisa_lock = _threading.Lock()
+
+def _fetch_cisa_background():
+    while True:
+        try:
+            import requests as _req
+            r = _req.get(
+                "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+                timeout=15
+            )
+            data = r.json()
+            vulns = sorted(data.get("vulnerabilities", []),
+                           key=lambda v: v.get("dateAdded", ""), reverse=True)
+            with _cisa_lock:
+                _cisa_cache["vulns"] = vulns
+                _cisa_cache["fetched_at"] = _time.time()
+        except Exception:
+            pass
+        _time.sleep(3600)  # refresh every hour
+
+_cisa_thread = _threading.Thread(target=_fetch_cisa_background, daemon=True)
+_cisa_thread.start()
+
+
+@app.get("/api/cisa/threats")
+def cisa_threats(limit: int = 100):
+    with _cisa_lock:
+        vulns = _cisa_cache.get("vulns", [])
+        fetched_at = _cisa_cache.get("fetched_at")
+    if not vulns:
+        try:
+            import requests as _req
+            r = _req.get(
+                "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+                timeout=12
+            )
+            data = r.json()
+            vulns = sorted(data.get("vulnerabilities", []),
+                           key=lambda v: v.get("dateAdded", ""), reverse=True)
+            with _cisa_lock:
+                _cisa_cache["vulns"] = vulns
+                _cisa_cache["fetched_at"] = _time.time()
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Could not fetch CISA data: {e}")
+    return {
+        "total": len(vulns),
+        "threats": vulns[:limit],
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
